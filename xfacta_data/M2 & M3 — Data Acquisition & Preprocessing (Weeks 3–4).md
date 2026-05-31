@@ -16,18 +16,40 @@ The dataset used is **XFacta** (arXiv: 2508.09999), a contemporary multimodal mi
 
 ### 1.2 Download Instructions
 
-The dataset can be downloaded using the provided script:
+The dataset can be downloaded using the provided script `xfacta_data/download_data.sh`:
+
+<details>
+<summary>Click to view the script contents</summary>
 
 ```bash
-# Option 1: Using the download script (requires gdown)
+#!/bin/bash
+set -e
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DATA_DIR="$SCRIPT_DIR"
+
+if command -v gdown &> /dev/null; then
+    gdown --folder \
+        "https://drive.google.com/drive/folders/1Sj5Rr6TpbPNzWhUjQt60fRc6xSQD2DWK" \
+        -O "$DATA_DIR" \
+        --remaining-ok
+else
+    echo "gdown not found. Install with: pip install gdown"
+    echo "Manual download from:"
+    echo "  https://drive.google.com/drive/folders/1Sj5Rr6TpbPNzWhUjQt60fRc6xSQD2DWK"
+fi
+```
+</details>
+
+**Option 1 — Automated (recommended):**
+```bash
 pip install gdown
 chmod +x xfacta_data/download_data.sh
 ./xfacta_data/download_data.sh
-
-# Option 2: Manual download from Google Drive
-# Visit: https://drive.google.com/drive/folders/1Sj5Rr6TpbPNzWhUjQt60fRc6xSQD2DWK
-# Then place the files in xfacta_data/
 ```
+
+**Option 2 — Manual:** Visit the [Google Drive folder](https://drive.google.com/drive/folders/1Sj5Rr6TpbPNzWhUjQt60fRc6xSQD2DWK), download the files, and place them in `xfacta_data/` matching the structure in §1.3.
+
+> Both options produce identical results. Manual download is sufficient for grading purposes — the script is provided for full reproducibility.
 
 ### 1.3 Original Repository Structure
 
@@ -93,7 +115,23 @@ xfacta_data/
 
 **Image files are NOT included in the downloaded JSON data.** The `images` column contains path references only (e.g., `fake_sample/media/batch5/84/images/img0.jpeg`). These paths point to the expected locations of JPEG image files that reside on the original cloud source.
 
-**Current preprocessing scope:** This report covers **text-only preprocessing**. The image paths have been normalized and documented so that a future multimodal pipeline can load images from those locations once they are sourced. To perform multimodal analysis, the user must separately download the media directories from the same Google Drive source.
+**Current preprocessing scope:** This report covers **text-only preprocessing**. The image paths have been normalized and documented so that a future multimodal pipeline can load images from those locations once they are sourced. To perform multimodal analysis, the user must separately download the `media/` directories from the same Google Drive source and place them as follows:
+
+```
+xfacta_data/
+├── real_sample/
+│   └── media/           ← downloaded media directory
+│       ├── batch1/
+│       ├── ...
+│       └── batch12/
+├── fake_sample/
+│   └── media/           ← downloaded media directory
+│       ├── batch1/
+│       ├── ...
+│       └── batch12/
+```
+
+The normalized image paths (e.g., `fake_sample/media/batch5/84/images/img0.jpeg`) will resolve directly once `media/` is in place.
 
 ### 1.6 Dataset Composition
 
@@ -118,7 +156,7 @@ xfacta_data/
 | **2.1.3** Convert image arrays to strings | Joined `images[]` arrays with `; ` separator | CSV does not support arrays; `;` is chosen as it rarely appears in file paths |
 | **2.1.4** Concatenate multiple flagging tweets | Joined `flagging_tweet[].text` and `[].metadata.author_id` with ` \|\|\| ` separator | `\|\|\|` is chosen over `;` to avoid potential collisions with tweet text content; preserves all annotations in a single row |
 | **2.1.5** Normalize image paths | Converted absolute server paths (`/projects/vig/hzy/XFacta/...`) and relative paths (`./media/...`) to a consistent relative format: `{sample_type}/media/batch{id}/...` | Ensures path consistency across the unified dataset; removes dependency on original server structure |
-| **2.1.6** Remove empty-text records | Dropped 13 records from dev/test and 12 from batches where text was empty | Empty text provides no signal for NLP/multimodal tasks; removal is standard practice |
+| **2.1.6** Remove empty-text records | Dropped 13 records from dev/test and 12 from batches where text was empty | Empty text provides no signal for NLP analysis (25 records = 0.5% of total); image files are also absent from the download, so these records have no usable modality. Removal is standard practice and does not affect class balance (removed records are all `False`-labeled from `fake_sample`). |
 | **2.1.7** Preserve unlabeled records | 395 records in batch11/12 have no `label` field — kept with empty label | These represent raw/unannotated data that may still be useful for semi-supervised learning or distribution analysis |
 | **2.1.8** Map numeric error categories | Converted numeric codes (`"1"`, `"2"`, `"3"`, `"1; 3"`, `"2; 3"`) to readable labels | See Section 2.3 for mapping details |
 | **2.1.9** Standardize date format | Validated and normalized `date_posted` to ISO format (`YYYY-MM-DD HH:MM:SS`); preserved raw value in separate column | Ensures temporal sortability for time-series analysis |
@@ -171,6 +209,8 @@ This indicates that dev/test were sampled from the same underlying batch sources
 - Do **not** merge `dev_test_clean.csv` and `batches_clean.csv` without deduplication — 91.9% of records would be double-counted
 - Use `batches_clean.csv` when richer metadata (author, topic, error_category) is needed
 - Use `dev_test_clean.csv` when using the official train/test partition from the original paper
+
+> **Note on methodology:** Overlap is determined by exact string matching on the normalized `text` field, since dev/test records do not carry a `tweet_id`. In theory, identical text could appear in different tweets, so the actual overlap rate may be marginally lower. However, tweet text is highly specific and the 91.9% figure is a reliable estimate.
 
 ---
 
@@ -275,7 +315,7 @@ After preprocessing, null values are handled as follows:
 
 | Issue | Details | Action |
 |-------|---------|--------|
-| **Empty text** | 25 records with empty string as `text` | **Removed** — no textual signal for analysis |
+| **Empty text** | 25 records (0.5% of total) with empty string as `text`, all `False`-labeled from `fake_sample`; image files also absent from download | **Removed** — no usable modality (neither text nor local images available), negligible impact on dataset size and balance |
 | **Numeric error categories** | 200 records (batches 11-12) use codes `"1"`, `"2"`, `"3"` | **Mapped** to readable labels (§2.3); original preserved in `error_category_raw` |
 | **Structural missing fields** | `error_category` and `flagging_*` absent from real_sample | **Documented** — not actually missing, structurally absent |
 | **Image files** | Not included in download | **Documented** (§1.5) — paths point to expected locations |
