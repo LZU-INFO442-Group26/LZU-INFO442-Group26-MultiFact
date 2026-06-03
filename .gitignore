@@ -1,1 +1,4 @@
 .env
+.DS_Store
+*.zip
+notebooks/test_plot.png
